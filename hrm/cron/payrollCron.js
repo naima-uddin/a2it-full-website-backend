@@ -1,0 +1,184 @@
+/**
+ * Payroll Auto-Generation Cron
+ *
+ * Runs on the 1st of every month at 01:00 AM.
+ * Generates payroll for the PREVIOUS month for every active employee
+ * that doesn't already have a payroll record for that period.
+ *
+ * Result: every month that has attendance data will automatically
+ * get payroll records for all employees — no manual "Bulk Generate" needed.
+ */
+
+const Payroll = require('../models/PayrollModel');
+const User   = require('../models/UsersModel');
+const { _calculatePayrollHelper: calculatePayroll } = require('../controller/payrollController');
+
+/**
+ * Generate missing payrolls for a given month/year.
+ * Called by the cron AND directly when the payroll page detects a gap.
+ */
+async function autoGenerateMonthlyPayrolls(month, year) {
+  const label = `${String(month).padStart(2,'0')}/${year}`;
+  console.log(`\n💰 [PayrollCron] Auto-generating payrolls for ${label}...`);
+
+  try {
+    // Use the first admin as createdBy
+    const admin = await User.findOne({ role: { $in: ['admin','superAdmin'] }, isActive: true })
+      .select('_id').lean();
+    if (!admin) {
+      console.error('❌ [PayrollCron] No admin user found — aborting');
+      return { created: 0, skipped: 0, errors: 0 };
+    }
+
+    // All active employees with a salary set
+    const employees = await User.find({
+      isActive: true,
+      isDeleted: { $ne: true },
+      role: { $nin: ['admin', 'superAdmin', 'moderator'] },
+      salary: { $gt: 0 },
+    }).select('_id firstName lastName employeeId salary department designation').lean();
+
+    let created = 0, skipped = 0, errors = 0;
+
+    for (const emp of employees) {
+      try {
+        // Skip if payroll already exists for this period
+        const exists = await Payroll.findOne({
+          employee: emp._id,
+          month: parseInt(month),
+          year: parseInt(year),
+          isDeleted: false,
+        });
+        if (exists) { skipped++; continue; }
+
+        // Calculate from attendance records
+        const calc = await calculatePayroll(
+          emp._id,
+          emp.salary,
+          parseInt(month),
+          parseInt(year),
+          {}
+        );
+
+        const payroll = new Payroll({
+          employee:     emp._id,
+          employeeName: `${emp.firstName} ${emp.lastName}`,
+          employeeId:   emp.employeeId,
+          department:   emp.department   || '',
+          designation:  emp.designation  || '',
+
+          periodStart: calc.period.startDate,
+          periodEnd:   calc.period.endDate,
+          month:       parseInt(month),
+          year:        parseInt(year),
+          status:      'Pending',
+
+          salaryDetails: {
+            monthlySalary:    calc.rates.monthlySalary,
+            dailyRate:        calc.rates.dailyRate,
+            hourlyRate:       calc.rates.hourlyRate,
+            overtimeRate:     calc.rates.overtimeRate || 0,
+            currency:         'BDT',
+            calculationBasis: calc.rates.calculationBasis,
+          },
+
+          attendance: {
+            totalWorkingDays:     calc.attendance.totalWorkingDays,
+            presentDays:          calc.attendance.presentDays,
+            absentDays:           calc.attendance.absentDays,
+            leaveDays:            calc.attendance.leaveDays,
+            lateDays:             calc.attendance.lateDays,
+            halfDays:             calc.attendance.halfDays,
+            holidays:             calc.attendance.holidays,
+            weeklyOffs:           calc.attendance.weeklyOffs,
+            attendancePercentage: calc.attendance.totalWorkingDays
+              ? Math.round((calc.attendance.presentDays / calc.attendance.totalWorkingDays) * 100)
+              : 0,
+          },
+
+          monthInfo: {
+            totalHolidays:   calc.attendance.holidays || 0,
+            totalWeeklyOffs: calc.attendance.weeklyOffs || 0,
+            holidayList:     calc.attendance.holidayList || [],
+            weeklyOffDays:   calc.attendance.weeklyOffList || [],
+          },
+
+          earnings: {
+            basicPay: calc.calculations.basicPay,
+            total:    calc.calculations.basicPay,
+          },
+
+          deductions: {
+            lateDeduction:    calc.calculations.deductions.late?.amount    || 0,
+            absentDeduction:  calc.calculations.deductions.absent?.amount  || 0,
+            leaveDeduction:   calc.calculations.deductions.leave?.amount   || 0,
+            halfDayDeduction: calc.calculations.deductions.halfDay?.amount || 0,
+            total:            calc.calculations.deductions.actualTotal     || 0,
+          },
+
+          summary: {
+            grossEarnings:   calc.calculations.basicPay,
+            totalDeductions: calc.calculations.deductions.actualTotal || 0,
+            netPayable:      calc.calculations.totals.netPayable,
+            payableDays:     calc.attendance.presentDays,
+          },
+
+          calculationNotes: {
+            calculationNote: calc.notes?.calculationNote || 'Auto-generated by monthly cron',
+          },
+
+          calculation: {
+            method:           'auto_backend',
+            calculatedDate:   new Date(),
+            calculatedBy:     admin._id,
+            dataSources:      ['attendance', 'leaves', 'holidays', 'office_schedule'],
+            calculationNotes: `Auto-generated by payroll cron for ${label}`,
+          },
+
+          metadata: {
+            isAutoGenerated: true,
+            attendanceBased: true,
+            fixed23Days:     false,
+            batchId:         `CRON_${month}_${year}`,
+          },
+
+          createdBy: admin._id,
+        });
+
+        await payroll.save();
+        created++;
+        console.log(`   ✓ ${emp.firstName} ${emp.lastName} — BDT ${payroll.summary.netPayable.toLocaleString()}`);
+
+      } catch (err) {
+        errors++;
+        console.error(`   ✗ ${emp.firstName} ${emp.lastName}: ${err.message}`);
+      }
+    }
+
+    console.log(`✅ [PayrollCron] ${label} done: ${created} created | ${skipped} already existed | ${errors} errors\n`);
+    return { created, skipped, errors };
+
+  } catch (err) {
+    console.error('❌ [PayrollCron] Fatal error:', err.message);
+    return { created: 0, skipped: 0, errors: 1 };
+  }
+}
+
+/**
+ * Schedule: 1st of every month at 01:00 AM
+ * Generates payroll for the PREVIOUS month.
+ */
+function startPayrollCron() {
+  const cron = require('node-cron');
+
+  cron.schedule('0 1 1 * *', async () => {
+    const now  = new Date();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();          // Jan→Dec of prev year
+    const year  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    await autoGenerateMonthlyPayrolls(month, year);
+  });
+
+  console.log('✅ Payroll cron scheduled: runs on 1st of every month at 01:00 AM');
+}
+
+module.exports = { startPayrollCron, autoGenerateMonthlyPayrolls };

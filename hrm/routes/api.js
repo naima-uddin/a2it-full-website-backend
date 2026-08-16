@@ -1,0 +1,1557 @@
+const express = require("express");
+const router = express.Router();
+const userController = require("../controller/userController");
+const authController = require("../controller/authController");
+const payrollController = require("../controller/payrollController");
+const attendanceController = require("../controller/attendanceController");
+const auditController = require("../controller/auditController");
+const sessionController = require("../controller/sessionLogController");
+const holidayController = require("../controller/holidayController");
+const leaveController = require("../controller/leaveController");
+const salaryRuleController = require("../controller/salaryRuleController");
+const OfficeSchedule = require("../controller/officeScheduleController");
+const profileController = require("../controller/profileController");
+const reportController = require("../controller/reportController");
+const dashboardController = require("../controller/dashboardController");
+const OfficeRentController = require("../controller/officeController");
+const billController = require("../controller/utilityBillsController");
+const officeSupplyController = require("../controller/officeSupplyController");
+const foodCostController = require("../controller/foodCostController");
+const softwareSubscriptionController = require("../controller/softwareSubscriptionController");
+const transportExpenseController = require("../controller/transportController");
+const miscellaneousExpense = require("../controller/miscellaneousController");
+const mealController = require("../controller/mealController");
+const notificationController = require("../controller/notificationController");
+const taskController = require("../controller/taskController");
+const upload = require("../middleware/multer");
+const uploadExcel = require("../middleware/uploadExcel");
+const { protect, adminOnly, requireRole } = require("../middleware/AuthVerifyMiddleWare");
+const SendEmailUtility = require("../utility/SendEmailUtility");
+
+// =================== Login Routes ====================
+// router.post("/admin/login", userController.adminLogin);
+// router.post("/users/userLogin", userController.userLogin);
+router.post("/unified-login", userController.unifiedLogin);
+
+// =================== Admin Control Routes ====================
+router.post(
+  "/admin/create-user",
+  protect,
+  adminOnly,
+  userController.createUser,
+);
+router.get(
+  "/admin/getAdminProfile",
+  protect,
+  adminOnly,
+  userController.getAdminProfile,
+);
+router.post(
+  "/admin/updateAdminProfile",
+  protect,
+  adminOnly,
+  userController.updateAdminProfile,
+);
+router.get(
+  "/admin/getAll-user",
+  protect,
+  adminOnly,
+  userController.getAllUsers,
+);
+router.put(
+  "/admin/update-user/:id",
+  protect,
+  adminOnly,
+  userController.adminUpdateUser,
+);
+router.delete(
+  "/admin/user-delete/:id",
+  protect,
+  adminOnly,
+  userController.deleteUser,
+);
+router.get("/my-sessions", protect, userController.getAllSessions);
+router.delete(
+  "/terminate-session/:id",
+  protect,
+  userController.terminateSession,
+);
+router.post("/logout-all", protect, userController.logoutAllSessions);
+router.get("/profile/:id", protect, adminOnly, userController.getUserById);
+router.get(
+  "/admin/users/search",
+  protect,
+  adminOnly,
+  userController.searchUsers,
+);
+router.get(
+  "/admin/users/:id/summary",
+  protect,
+  adminOnly,
+  userController.getUserSummary,
+);
+// ================= ONSITE BENEFITS MANAGEMENT ROUTES =================
+router.get(
+  "/admin/onsite-employees",
+  protect,
+  adminOnly,
+  userController.getOnsiteEmployees,
+);
+
+router.put(
+  "/admin/employee/:employeeId/onsite-benefits",
+  protect,
+  adminOnly,
+  userController.updateOnsiteBenefitsSettings,
+);
+
+router.post(
+  "/admin/bulk-onsite-benefits",
+  protect,
+  adminOnly,
+  userController.bulkUpdateOnsiteBenefits,
+);
+// Direct admin password reset (no OTP)
+router.put(
+  "/admin/direct-reset-password/:userId",
+  protect,
+  adminOnly,
+  userController.adminDirectResetPassword,
+);
+// Forgot password — employee sends notification email to admin
+router.post("/forgot-password-email", userController.forgotPasswordEmail);
+// =================== OTP Routes ====================
+router.post("/admin/request-otp", authController.AdminRequestOtp);
+router.post("/admin/verify-otp", authController.AdminVerifyOtp);
+router.post("/admin/reset-password", authController.AdminResetPassword);
+router.get("/admin/cleanup-otps", authController.CleanupExpiredOtps);
+
+// Admin only routes
+router.get("/all-sessions", protect, adminOnly, userController.getAllSessions);
+router.get("/session/:id", protect, adminOnly, userController.getSessionById);
+// =================== Employee Routes ====================
+router.get("/users/getProfile", protect, userController.getProfile);
+router.post("/users/updateProfile", protect, userController.updateProfile);
+// router.put("/users/updateProfile", protect, userController.updateProfile);
+
+// =================== ProfileImage Routes ====================
+router.post(
+  "/upload-profile-picture",
+  protect,
+  upload.single("profilePicture"),
+  profileController.uploadProfilePicture,
+);
+
+router.delete(
+  "/remove-profile-picture",
+  protect,
+  profileController.removeProfilePicture,
+);
+
+// routes/admin.js
+router.post("/send-welcome-email", async (req, res) => {
+  try {
+    console.log("📧 Welcome email API called:", req.body);
+
+    const {
+      to,
+      subject,
+      userName,
+      userEmail,
+      password,
+      role,
+      department,
+      joiningDate,
+      salary,
+      loginUrl,
+    } = req.body;
+
+    // Validation
+    if (!to || !userEmail || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+      });
+    }
+
+    // Create email text content
+    const emailText = `
+            Welcome to Attendance System!
+            
+            Hello ${userName},
+            
+            Your account has been successfully created.
+            
+            ======== LOGIN CREDENTIALS ========
+            Email: ${userEmail}
+            Password: ${password}
+            Role: ${role}
+            Department: ${department}
+            
+            ======== ACCOUNT DETAILS ========
+            Joining Date: ${joiningDate}
+            Monthly Salary: ৳${salary}
+            
+            ======== IMPORTANT ========
+            1. Login URL: ${loginUrl}
+            2. Change your password after first login
+            3. Keep your credentials secure
+            
+            ======== CONTACT ========
+            If you face any issues, contact system administrator.
+            
+            Best regards,
+            A2IT HRM System
+            admin@attendance-system.a2itltd.com
+        `;
+
+    // Create HTML content
+    const emailHTML = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                    .content { padding: 30px; background: #f9f9f9; }
+                    .credentials { background: white; border: 2px dashed #667eea; 
+                                padding: 20px; margin: 20px 0; border-radius: 8px; }
+                    .button { display: inline-block; background: #667eea; 
+                            color: white; padding: 12px 30px; text-decoration: none; 
+                            border-radius: 5px; margin: 15px 0; }
+                    .footer { text-align: center; padding: 20px; color: #666; 
+                            font-size: 12px; border-top: 1px solid #eee; }
+                    .info-item { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 5px; }
+                    .warning { background: #fff3cd; border-left: 4px solid #ffc107; 
+                            padding: 10px; margin: 15px 0; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Welcome to Attendance System! 🎉</h1>
+                        <p>A2IT HRM Portal</p>
+                    </div>
+                    
+                    <div class="content">
+                        <h2>Hello ${userName},</h2>
+                        <p>Your account has been successfully created in the A2IT Attendance System.</p>
+                        
+                        <div class="credentials">
+                            <h3>🔐 Your Login Credentials</h3>
+                            <div class="info-item">
+                                <strong>📧 Email:</strong> ${userEmail}
+                            </div>
+                            <div class="info-item">
+                                <strong>🔑 Password:</strong> <code style="background: #e9ecef; padding: 3px 8px; border-radius: 3px;">${password}</code>
+                            </div>
+                            <div class="info-item">
+                                <strong>👤 Role:</strong> ${role}
+                            </div>
+                            <div class="info-item">
+                                <strong>🏢 Department:</strong> ${department}
+                            </div>
+                        </div>
+                        
+                        <div class="warning">
+                            <strong>⚠️ Security Notice:</strong><br>
+                            For security reasons, please change your password immediately after first login.
+                        </div>
+                        
+                        <a href="${loginUrl}" class="button">🚀 Login to System Now</a>
+                        
+                        <p><strong>🔗 Direct Login Link:</strong><br>
+                        <a href="${loginUrl}">${loginUrl}</a></p>
+                        
+                        <hr>
+                        
+                        <h3>📋 Account Information</h3>
+                        <div class="info-item">
+                            <strong>📅 Joining Date:</strong> ${joiningDate}
+                        </div>
+                        <div class="info-item">
+                            <strong>💰 Monthly Salary:</strong> ৳${salary}
+                        </div>
+                        <div class="info-item">
+                            <strong>🏛️ Department:</strong> ${department}
+                        </div>
+                        
+                        <div style="margin-top: 30px; padding: 15px; background: #e7f3ff; border-radius: 8px;">
+                            <h4>📞 Need Help?</h4>
+                            <p>If you encounter any issues, please contact:</p>
+                            <p><strong>System Administrator</strong><br>
+                            Email: admin@attendance-system.a2itltd.com</p>
+                        </div>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>This is an automated email from A2IT HRM System.</p>
+                        <p>Please do not reply to this message.</p>
+                        <p>© ${new Date().getFullYear()} A2IT Ltd. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+    // Send email using your existing utility
+    await SendEmailUtility(
+      to,
+      subject || "Welcome to A2IT HRM System",
+      emailText,
+    );
+
+    console.log("✅ Welcome email sent to:", to);
+
+    return res.json({
+      success: true,
+      message: "Welcome email sent successfully",
+      email: to,
+    });
+  } catch (error) {
+    console.error("❌ Welcome email error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send welcome email",
+      error: error.message,
+    });
+  }
+});
+
+// Employee Routes
+router.get("/today-status", protect, attendanceController.getTodayStatus);
+router.get("/records", protect, attendanceController.getAttendanceRecords);
+router.get("/summary", protect, attendanceController.getAttendanceSummary);
+router.get("/late-statistics", protect, attendanceController.getLateStatistics);
+router.get(
+  "/late-early-statistics",
+  protect,
+  attendanceController.getLateEarlyStatistics,
+);
+router.get("/shift-timing", protect, attendanceController.getShiftTiming);
+router.get("/export", protect, attendanceController.exportAttendanceData);
+router.get("/check-working-day", protect, attendanceController.checkWorkingDay);
+router.post("/clock-in", protect, attendanceController.clockIn);
+router.post("/clock-out", protect, attendanceController.clockOut);
+
+// Enhanced Employee Routes
+router.get("/calendar", protect, attendanceController.getEmployeeCalendar);
+router.get("/monthly-report", protect, attendanceController.getMonthlyReport);
+router.get("/analytics", protect, attendanceController.getAttendanceAnalytics);
+router.get("/schedule", protect, attendanceController.getEmployeeSchedule);
+router.post("/quick-action", protect, attendanceController.quickClockAction);
+router.get(
+  "/attendance-notifications",
+  protect,
+  attendanceController.getAttendanceNotifications,
+);
+router.get("/history", protect, attendanceController.getAttendanceHistory);
+router.get("/date-range", protect, attendanceController.getAttendanceDateRange);
+// Admin Routes
+router.get(
+  "/admin/all-records",
+  protect,
+  adminOnly,
+  attendanceController.getAllAttendanceRecords,
+);
+router.get(
+  "/admin/summary",
+  protect,
+  adminOnly,
+  attendanceController.getDashboardStats,
+);
+router.get(
+  "/admin/late-statistics",
+  protect,
+  adminOnly,
+  attendanceController.getAdminLateStatistics,
+);
+router.get(
+  "/admin/late-early-statistics",
+  protect,
+  adminOnly,
+  attendanceController.getAdminLateEarlyStatistics,
+);
+router.get(
+  "/admin/employee-attendance",
+  protect,
+  adminOnly,
+  attendanceController.getAdminEmployeeAttendance,
+);
+router.get(
+  "/admin/shift-timing",
+  protect,
+  adminOnly,
+  attendanceController.getAdminShiftTiming,
+);
+router.get(
+  "/admin/export",
+  protect,
+  adminOnly,
+  attendanceController.exportAdminAttendanceData,
+);
+router.get(
+  "/admin/auto-clock-out-schedule",
+  protect,
+  adminOnly,
+  attendanceController.getAutoClockOutSchedule,
+);
+router.get(
+  "/check-weekly-off-config",
+  protect,
+  adminOnly,
+  attendanceController.checkWeeklyOffConfig,
+);
+router.post(
+  "/admin/cleanup-duplicates",
+  protect,
+  adminOnly,
+  attendanceController.cleanupDuplicates,
+);
+// Enhanced Admin Routes
+router.get(
+  "/admin/employee-calendar",
+  protect,
+  adminOnly,
+  attendanceController.getEmployeeCalendar,
+);
+router.get(
+  "/admin/employee-monthly-report",
+  protect,
+  adminOnly,
+  attendanceController.getMonthlyReport,
+);
+router.get(
+  "/admin/employee-analytics",
+  protect,
+  adminOnly,
+  attendanceController.getAttendanceAnalytics,
+);
+router.get(
+  "/admin/employee-schedule",
+  protect,
+  adminOnly,
+  attendanceController.getEmployeeSchedule,
+);
+
+// Admin CRUD Routes
+router.post(
+  "/admin/manual",
+  protect,
+  adminOnly,
+  attendanceController.createManualAttendance,
+);
+router.put(
+  "/admin/update/:id",
+  protect,
+  adminOnly,
+  attendanceController.updateAttendance,
+);
+router.delete(
+  "/admin/delete/:id",
+  protect,
+  adminOnly,
+  attendanceController.deleteAttendance,
+);
+
+// Admin Correction Routes
+router.put(
+  "/admin/correct/:id",
+  protect,
+  adminOnly,
+  attendanceController.correctAttendance,
+);
+router.post(
+  "/admin/bulk",
+  protect,
+  adminOnly,
+  attendanceController.createBulkAttendance,
+);
+router.post(
+  "/admin/bulk-v2",
+  protect,
+  adminOnly,
+  attendanceController.createBulkAttendanceV2,
+);
+router.post(
+  "/admin/import-attendance-excel",
+  protect,
+  adminOnly,
+  uploadExcel.single("file"),
+  attendanceController.importEmployeeAttendanceExcel,
+);
+router.post(
+  "/admin/import-attendance-pdf",
+  protect,
+  adminOnly,
+  uploadExcel.single("file"),
+  attendanceController.importEmployeeAttendancePdf,
+);
+router.post(
+  "/admin/import-attendance-preview",
+  protect,
+  adminOnly,
+  uploadExcel.single("file"),
+  attendanceController.previewImportAttendance,
+);
+router.post(
+  "/admin/import-attendance-apply",
+  protect,
+  adminOnly,
+  attendanceController.applyImportAttendanceRows,
+);
+
+// Admin Shift Management Routes
+router.put(
+  "/admin/update-shift",
+  protect,
+  adminOnly,
+  attendanceController.updateEmployeeShift,
+);
+router.put(
+  "/admin/update-shift-timing",
+  protect,
+  adminOnly,
+  attendanceController.updateEmployeeShiftTiming,
+);
+
+// Admin Trigger Routes
+router.post(
+  "/admin/trigger-auto-clockout",
+  protect,
+  adminOnly,
+  attendanceController.triggerAutoClockOut,
+);
+router.post(
+  "/admin/trigger-manual-auto-clockout",
+  protect,
+  adminOnly,
+  attendanceController.triggerManualAutoClockOut,
+);
+router.post(
+  "/admin/trigger-absent-marking",
+  protect,
+  adminOnly,
+  attendanceController.triggerAbsentMarking,
+);
+router.post(
+  "/admin/trigger-tomorrow-records",
+  protect,
+  adminOnly,
+  attendanceController.triggerTomorrowRecords,
+);
+// routes/attendance.js
+router.post("/auto-mark-absent", protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { date, reason, shiftTiming, ruleType } = req.body;
+
+    const currentDate = new Date(date);
+    const day = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+    // ✅ ১. Weekend model থেকে weekend check
+    const Weekend = require("../models/OfficeScheduleModel"); // আপনার Weekend model
+
+    // উপায় ১: Day number দিয়ে check
+    const weekendDay = await Weekend.findOne({
+      dayNumber: day,
+    });
+
+    // উপায় ২: Day name দিয়ে check
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
+    const weekendByName = await Weekend.findOne({
+      dayName: dayNames[day],
+    });
+
+    // উপায় ৩: isWeekend flag দিয়ে check
+    const weekendCheck = await Weekend.findOne({
+      dayNumber: day,
+      isWeekend: true,
+    });
+
+    if (weekendDay || weekendByName || weekendCheck) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot mark absent on ${dayNames[day]} (Weekend)`,
+      });
+    }
+
+    // ✅ ২. Holiday check
+    const Holiday = require("../models/HolidayModel");
+    const startOfDay = new Date(currentDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(currentDate.setHours(23, 59, 59, 999));
+
+    const holidayCheck = await Holiday.findOne({
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    if (holidayCheck) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot mark absent on ${holidayCheck.name || "Holiday"}`,
+      });
+    }
+
+    // ✅ ৩. Check existing attendance
+    const existingRecord = await Attendance.findOne({
+      employee: userId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    if (existingRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "Attendance already exists for today",
+      });
+    }
+
+    // ✅ ৪. এখনই শুধু absent মার্ক করুন
+    const absentRecord = new Attendance({
+      employee: userId,
+      date: currentDate,
+      status: "Absent",
+      clockIn: null,
+      clockOut: null,
+      totalHours: 0,
+      markedAbsent: true,
+      autoMarked: true,
+      reason: reason || "No clock-in",
+      remarks: `Auto-marked absent (${ruleType || "system rule"})`,
+    });
+
+    await absentRecord.save();
+
+    res.json({
+      success: true,
+      message: "Auto absent marked successfully",
+      record: absentRecord,
+    });
+  } catch (error) {
+    console.error("Auto absent marking error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to mark auto absent",
+    });
+  }
+});
+
+// ================= Shift ROUTES =================
+router.get(
+  "/admin/employee-shifts",
+  protect,
+  adminOnly,
+  userController.getAllEmployeeShifts,
+);
+router.post(
+  "/admin/reset-shift/:employeeId",
+  protect,
+  adminOnly,
+  userController.resetUserShift,
+);
+router.put(
+  "/admin/default-shift",
+  protect,
+  adminOnly,
+  userController.updateDefaultShift,
+);
+router.get(
+  "/admin/shift-history/:employeeId",
+  protect,
+  adminOnly,
+  userController.getEmployeeShiftHistory,
+);
+router.post(
+  "/admin/bulk-assign-shifts",
+  protect,
+  adminOnly,
+  userController.bulkAssignShiftToUsers,
+);
+router.get(
+  "/admin/shift-statistics",
+  protect,
+  adminOnly,
+  userController.getShiftStatistics,
+);
+router.get("/my-shift", protect, userController.getMyShift);
+router.get(
+  "/employee/:employeeId/shift",
+  protect,
+  userController.getEmployeeShift,
+); // ✅ নতুন
+router.put(
+  "/employee/:employeeId/shift",
+  protect,
+  adminOnly,
+  userController.updateEmployeeShift,
+);
+
+// =================== Leave Routes ====================
+router.get("/my-leaves", protect, leaveController.getMyLeaves);
+router.get("/balance", protect, leaveController.getLeaveBalance);
+router.get("/stats", protect, leaveController.getLeaveStats);
+router.post("/request", protect, leaveController.requestLeave);
+router.get("/getLeave/:id", protect, leaveController.getLeaveById);
+router.put("/updateLeave/:id", protect, leaveController.updateLeave);
+router.delete("/deleteLeave/:id", protect, leaveController.deleteLeave);
+router.get("/admin/all", protect, adminOnly, leaveController.getAllLeaves);
+router.get(
+  "/admin/departments",
+  protect,
+  adminOnly,
+  leaveController.getDepartments,
+);
+router.put(
+  "/admin/approve/:id",
+  protect,
+  adminOnly,
+  leaveController.approveLeave,
+);
+router.put(
+  "/admin/reject/:id",
+  protect,
+  adminOnly,
+  leaveController.rejectLeave,
+);
+router.post(
+  "/admin/bulk-approve",
+  protect,
+  adminOnly,
+  leaveController.bulkApproveLeaves,
+);
+router.post(
+  "/admin/bulk-reject",
+  protect,
+  adminOnly,
+  leaveController.bulkRejectLeaves,
+);
+router.post(
+  "/admin/bulk-delete",
+  protect,
+  adminOnly,
+  leaveController.bulkDeleteLeaves,
+);
+router.get("/admin/export", protect, adminOnly, leaveController.exportLeaves);
+
+// =====================Holiday Routes=====================
+router.get("/holiday", protect, holidayController.getHolidays);
+router.get("/stats", protect, holidayController.getHolidayStats);
+router.get("/export", protect, holidayController.exportHolidays);
+router.get(
+  "/getHoliday/:id",
+  protect,
+  adminOnly,
+  holidayController.getHolidayById,
+);
+router.post("/addHoliday", protect, adminOnly, holidayController.addHoliday);
+router.put(
+  "/updateHoliday/:id",
+  protect,
+  adminOnly,
+  holidayController.updateHoliday,
+);
+router.delete(
+  "/deleteHoliday/:id",
+  protect,
+  adminOnly,
+  holidayController.deleteHoliday,
+);
+router.post("/import", protect, adminOnly, holidayController.importHolidays);
+router.post("/holiday/seed-bangladesh", protect, adminOnly, holidayController.seedBangladeshHolidays);
+router.get("/holiday/bangladesh", protect, holidayController.getBangladeshHolidays);
+
+// ====================Payroll Routes(Admin Only) ====================
+router.post(
+  "/payroll/calculate",
+  protect,
+  adminOnly,
+  payrollController.calculatePayroll,
+);
+router.post(
+  "/payroll/create",
+  protect,
+  adminOnly,
+  payrollController.createPayroll,
+);
+router.get(
+  "/payroll/all",
+  protect,
+  adminOnly,
+  payrollController.getAllPayrolls,
+);
+// Live "as of today" preview for all active employees (admin + moderator)
+router.get(
+  "/payroll/preview-all",
+  protect,
+  requireRole("admin", "superAdmin", "moderator"),
+  payrollController.previewAllPayrolls,
+);
+router.get("/payroll/:id", protect, payrollController.getPayrollById);
+router.put(
+  "/update-payroll/:id/status",
+  protect,
+  adminOnly,
+  payrollController.updatePayrollStatus,
+);
+router.delete(
+  "/delete-payroll/:id",
+  protect,
+  adminOnly,
+  payrollController.deletePayroll,
+);
+router.get(
+  "/payroll/employee/:userId",
+  protect,
+  adminOnly,
+  payrollController.getEmployeePayrolls,
+);
+router.post(
+  "/payroll/bulk-generate",
+  protect,
+  adminOnly,
+  payrollController.bulkGeneratePayrolls,
+);
+// Trigger auto-generate for any month (backfill / manual run)
+router.post(
+  "/payroll/auto-generate",
+  protect,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const { month, year } = req.body;
+      if (!month || !year) return res.status(400).json({ message: 'month and year required' });
+      const { autoGenerateMonthlyPayrolls } = require('../cron/payrollCron');
+      const result = await autoGenerateMonthlyPayrolls(parseInt(month), parseInt(year));
+      res.json({ status: 'success', ...result });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+router.get(
+  "/payroll/stats/monthly",
+  protect,
+  adminOnly,
+  payrollController.getPayrollStats,
+);
+router.get(
+  "/payroll/export/monthly",
+  protect,
+  adminOnly,
+  payrollController.exportPayrolls,
+);
+router.put(
+  "/payroll/:id/manual-inputs",
+  protect,
+  adminOnly,
+  payrollController.updateManualInputs,
+);
+router.get(
+  "/payroll/overtime/manual-only",
+  protect,
+  adminOnly,
+  payrollController.getPayrollWithManualOvertime,
+);
+router.post(
+  "/payroll/:id/recalculate",
+  protect,
+  adminOnly,
+  payrollController.recalculatePayroll,
+);
+router.get("/my-payrolls", protect, payrollController.getMyPayrolls);
+// Employee's own live "as of today" current-month preview
+router.get("/my-payroll-preview", protect, payrollController.getMyPayrollPreview);
+router.put(
+  "/payroll/:id/employee-accept",
+  protect,
+  payrollController.employeeAcceptPayroll,
+);
+router.get(
+  "/payroll/:id/check-acceptance",
+  protect,
+  payrollController.checkEmployeeAcceptance,
+);
+// Admin edit routes
+router.get(
+  "/admin/all",
+  protect,
+  adminOnly,
+  payrollController.adminViewAllPayrolls,
+);
+router.put(
+  "/payroll/:id/edit",
+  protect,
+  adminOnly,
+  payrollController.updatePayroll,
+);
+router.get(
+  "/payroll/:id/edit",
+  protect,
+  adminOnly,
+  payrollController.getPayrollForEdit,
+);
+// New food cost integration routes
+router.get(
+  "/food-cost/bills",
+  protect,
+  adminOnly,
+  payrollController.getFoodCostBillsForPayroll,
+);
+// Employee acceptance routes
+router.put(
+  "/:id/employee-accept",
+  protect,
+  payrollController.employeeAcceptPayroll,
+);
+router.get(
+  "/:id/employee-details",
+  protect,
+  payrollController.getEmployeePayrollDetails,
+);
+router.post("/preview", protect, adminOnly, payrollController.previewPayroll);
+router.get(
+  "/meal-data/:employeeId",
+  protect,
+  payrollController.getEmployeeMealData,
+);
+// =================== SalaryRule Routes ====================
+router.get("/active", protect, salaryRuleController.getActiveSalaryRules);
+router.get(
+  "/getSalaryRule",
+  protect,
+  adminOnly,
+  salaryRuleController.getAllSalaryRules,
+);
+router.get(
+  "/getSalaryRule/:id",
+  protect,
+  adminOnly,
+  salaryRuleController.getSalaryRuleById,
+);
+router.post(
+  "/createSalaryRule",
+  protect,
+  adminOnly,
+  salaryRuleController.createSalaryRule,
+);
+router.put(
+  "/updateSalaryRule/:id",
+  protect,
+  adminOnly,
+  salaryRuleController.updateSalaryRule,
+);
+router.delete(
+  "/deleteSalaryRule/:id",
+  protect,
+  adminOnly,
+  salaryRuleController.deleteSalaryRule,
+);
+
+// ====================AuditLog Admin Routes ====================
+// Viewing is allowed for admin, superAdmin and moderator. Deleting stays admin-only.
+router.get(
+  "/admin/getAllAudits",
+  protect,
+  requireRole("admin", "superAdmin", "moderator"),
+  auditController.getAllAuditLogs,
+);
+router.get(
+  "/admin/getAllAudits/:userId",
+  protect,
+  requireRole("admin", "superAdmin", "moderator"),
+  auditController.getAuditLogsByUserId,
+);
+router.delete(
+  "/admin/AuditDelete/:id",
+  protect,
+  adminOnly,
+  auditController.deleteAuditLog,
+);
+router.get(
+  "/admin/auditSearch",
+  protect,
+  requireRole("admin", "superAdmin", "moderator"),
+  auditController.searchAuditLogs,
+);
+router.get(
+  "/admin/stats",
+  protect,
+  requireRole("admin", "superAdmin", "moderator"),
+  auditController.getAuditStats,
+);
+router.get("/user/my-logs", protect, auditController.getMyAuditLogs);
+
+// ==================== Task Management Routes ====================
+// Assign / manage tasks — admin, superAdmin, moderator. Employees can view and
+// update the status of tasks assigned to them.
+const taskAdmins = requireRole("admin", "superAdmin", "moderator");
+
+// Create: any user can raise a task (employees are forced to self-assign in the
+// controller). Delete: privileged users OR the person who created the task.
+router.post("/tasks", protect, taskController.createTask);
+router.get("/tasks", protect, taskAdmins, taskController.getAllTasks);
+router.get("/tasks/stats", protect, taskAdmins, taskController.getTaskStats);
+router.post("/tasks/bulk-delete", protect, adminOnly, taskController.bulkDeleteTasks);
+router.get("/tasks/my", protect, taskController.getMyTasks);
+router.get("/tasks/:id", protect, taskController.getTaskById);
+router.put("/tasks/:id", protect, taskAdmins, taskController.updateTask);
+router.patch("/tasks/:id/status", protect, taskController.updateTaskStatus);
+router.post("/tasks/:id/comment", protect, taskController.addComment);
+router.delete("/tasks/:id", protect, taskController.deleteTask);
+
+// ✅ Public routes (login-based)
+router.post("/create", protect, sessionController.createSession);
+router.get("/my-sessions", protect, sessionController.getMySessions);
+router.get("/my/details/:id", protect, sessionController.getSessionDetails);
+router.put(
+  "/update-activity",
+  protect,
+  sessionController.updateSessionActivity,
+);
+router.post("/logout", protect, sessionController.logoutSession);
+
+// ✅ Admin routes
+router.get("/admin/all", protect, adminOnly, sessionController.getAllSessions);
+router.get(
+  "/admin/details/:id",
+  protect,
+  adminOnly,
+  sessionController.getSessionDetails,
+);
+router.post(
+  "/admin/terminate/:id",
+  protect,
+  adminOnly,
+  sessionController.terminateSession,
+);
+router.delete(
+  "/admin/delete/:id",
+  protect,
+  adminOnly,
+  sessionController.deleteSession,
+);
+
+// ✅ Statistics (available for all authenticated users)
+router.get("/stats", protect, sessionController.getRealTimeStats);
+
+// =================== WeaklyOff Routes ====================
+router.get("/weekly-off", protect, OfficeSchedule.getWeeklyOff);
+router.put(
+  "/updateWeekly-off",
+  protect,
+  adminOnly,
+  OfficeSchedule.updateWeeklyOff,
+);
+router.put(
+  "/override",
+  protect,
+  adminOnly,
+  OfficeSchedule.createOrUpdateOverride,
+);
+router.get(
+  "/override/history",
+  protect,
+  adminOnly,
+  OfficeSchedule.getOverrideHistory,
+);
+router.delete(
+  "/overrideDelete/:id",
+  protect,
+  adminOnly,
+  OfficeSchedule.deleteOverride,
+);
+
+// Reports routes
+router.get(
+  "/reports/employees",
+  protect,
+  adminOnly,
+  reportController.getEmployeesForReport,
+);
+router.get(
+  "/reports/departments",
+  protect,
+  adminOnly,
+  reportController.getDepartmentsForReport,
+);
+router.post(
+  "/reports/attendance",
+  protect,
+  adminOnly,
+  reportController.exportAttendanceReport,
+);
+router.post(
+  "/reports/payroll",
+  protect,
+  adminOnly,
+  reportController.exportPayrollReport,
+);
+router.post(
+  "/reports/employee-summary",
+  protect,
+  adminOnly,
+  reportController.exportEmployeeSummaryReport,
+);
+
+// =================== Dashboard Routes ====================
+router.get(
+  "/dashboard/monthly-summary",
+  protect,
+  adminOnly,
+  dashboardController.getMonthlySummary,
+);
+router.get(
+  "/dashboard/yearly-summary",
+  protect,
+  adminOnly,
+  dashboardController.getYearlySummary,
+);
+router.get(
+  "/dashboard/recent-expenses",
+  protect,
+  adminOnly,
+  dashboardController.getRecentExpenses,
+);
+
+// =================== Office Rent Routes ====================
+router.get("/office-rents", protect, OfficeRentController.getAllOfficeRents);
+router.get(
+  "/monthly/:year/:month",
+  protect,
+  OfficeRentController.getOfficeRentsByMonth,
+);
+router.get("/stats/total", protect, OfficeRentController.getOfficeRentStats);
+router.get(
+  "/stats/yearly/:year",
+  protect,
+  OfficeRentController.getYearlySummary,
+);
+router.post(
+  "/createOffice-rents",
+  protect,
+  OfficeRentController.createOfficeRent,
+);
+router.get(
+  "/office-rents/:id",
+  protect,
+  OfficeRentController.getOfficeRentById,
+);
+router.put(
+  "/updateOffice-rents/:id",
+  protect,
+  OfficeRentController.updateOfficeRent,
+);
+router.delete(
+  "/deleteOffice-rents/:id",
+  protect,
+  OfficeRentController.deleteOfficeRent,
+);
+
+// =================== Office Rent Routes ====================
+router.get("/bills", protect, billController.getAllBills);
+router.get("/bills/:id", protect, billController.getBillById);
+router.post("/newBills", protect, billController.addBills);
+router.put("/newBills/:id", protect, billController.updateBill);
+router.delete("/deleteBills/:id", protect, billController.deleteBill);
+router.get("/bills/types/all", protect, billController.getBillTypes);
+router.get("/bills/stats/summary", protect, billController.getStats);
+router.get("/bills/group/by-month", protect, billController.getBillsByMonth);
+router.get(
+  "/bills/month/:year/:month",
+  protect,
+  billController.getBillsByMonthYear,
+);
+router.put(
+  "/bills/update/month-bulk",
+  protect,
+  billController.updateMonthBills,
+);
+router.delete(
+  "/bills/month/:year/:month",
+  protect,
+  billController.deleteMonthBills,
+);
+router.get("/db/fix-index", protect, billController.fixIndex);
+router.get(
+  "/db/remove-duplicate-index",
+  protect,
+  billController.removeDuplicateIndex,
+);
+
+// =============== OFFICE SUPPLY ROUTES ===============
+router.get("/office-supplies", protect, officeSupplyController.getAllSupplies);
+router.post("/addOffice-supplies", protect, officeSupplyController.addSupplies);
+router.put(
+  "/office-supplies/:id",
+  protect,
+  officeSupplyController.updateSupply,
+);
+router.delete(
+  "/office-supplies/:id",
+  protect,
+  officeSupplyController.deleteSupply,
+);
+router.get("/office-supplies/stats", protect, officeSupplyController.getStats);
+router.post(
+  "/office-supplies/migrate-note",
+  protect,
+  officeSupplyController.migrateNoteField,
+);
+
+// =============== Food Cost ROUTES ===============
+router.get("/food-costs", protect, foodCostController.getAllFoodCosts);
+router.get("/food-costs/:id", protect, foodCostController.getFoodCostById);
+router.post("/add-food-costs/", protect, foodCostController.createFoodCost);
+router.put(
+  "/update-food-costs/:id",
+  protect,
+  foodCostController.updateFoodCost,
+);
+router.delete(
+  "/delete-food-costs/:id",
+  protect,
+  foodCostController.deleteFoodCost,
+);
+router.get(
+  "/food-costs/month/:year/:month",
+  protect,
+  foodCostController.getFoodCostsByMonth,
+);
+router.get("/food-costs/stats", protect, foodCostController.getFoodCostStats);
+router.get(
+  "/food-costs/check-date",
+  protect,
+  foodCostController.checkDateExists,
+);
+
+// =============== FSoftware Subscription ROUTES ===============
+router.get(
+  "/software-subscriptions",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.getAllSubscriptions,
+);
+router.post(
+  "/add-software-subscriptions",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.createSubscriptions,
+);
+router.put(
+  "/update-software-subscriptions/:id",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.updateSubscription,
+);
+router.delete(
+  "/delete-software-subscriptions/:id",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.deleteSubscription,
+);
+router.get(
+  "/software-subscriptions-stats",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.getSubscriptionStats,
+);
+router.post(
+  "/software-subscription-migrate-duration",
+  protect,
+  adminOnly,
+  softwareSubscriptionController.migrateDuration,
+);
+
+// =============== Tranport Cost ROUTES ===============
+router.get(
+  "/transport-expenses",
+  protect,
+  transportExpenseController.getTransportExpenses,
+);
+router.post(
+  "/create-transport-expenses",
+  protect,
+  transportExpenseController.addTransportExpenses,
+);
+router.get(
+  "/transport-expenses/stats",
+  protect,
+  transportExpenseController.getTransportExpenseStats,
+);
+router.put(
+  "/update-transport-expenses/:id",
+  protect,
+  transportExpenseController.updateTransportExpense,
+);
+router.delete(
+  "/delete-transport-expenses/:id",
+  protect,
+  transportExpenseController.deleteTransportExpense,
+);
+
+// =============== Miscellaneous Cost ROUTES ===============
+router.get("/miscellaneous", protect, miscellaneousExpense.getExtraExpenses);
+router.post(
+  "/create-miscellaneous",
+  protect,
+  miscellaneousExpense.addExtraExpenses,
+);
+router.put(
+  "/update-miscellaneous/:id",
+  protect,
+  miscellaneousExpense.updateExtraExpense,
+);
+router.delete(
+  "/delete-miscellaneous/:id",
+  protect,
+  miscellaneousExpense.deleteExtraExpense,
+);
+router.get(
+  "/miscellaneous/stats",
+  protect,
+  miscellaneousExpense.getExtraExpenseStats,
+);
+
+// // ============================
+// // EMPLOYEE ROUTES
+// // ============================
+
+// // Daily Meal Routes
+// router.post('/daily/request', protect, mealController.requestDailyMeal);
+// router.get('/daily/my-meals', protect, mealController.getMyDailyMeals);
+// router.put('/daily/cancel', protect, mealController.cancelDailyMeal);
+
+// // Subscription Routes
+// router.post('/subscription/setup', protect, mealController.setupMonthlySubscription);
+// router.post('/subscription/cancel', protect, mealController.cancelSubscription);
+// router.put('/subscription/update-preference', protect, mealController.updateSubscriptionPreference);
+// router.put('/subscription/update-auto-renew', protect, mealController.updateAutoRenew);
+// router.get('/subscription/my-details', protect, mealController.getMySubscription);
+
+// // Dashboard
+// router.get('/dashboard/stats', protect, mealController.getDashboardStats);
+
+// // ============================
+// // ADMIN ROUTES
+// // ============================
+
+// // Subscription Management
+// router.get('/admin/subscriptions/all', protect, adminOnly, mealController.getAllSubscriptions);
+// router.post('/admin/subscription/create', protect, adminOnly, mealController.adminCreateSubscription);
+// router.put('/admin/subscription/approve', protect, adminOnly, mealController.approveMonthlySubscription);
+
+// // Approval Management
+// router.get('/admin/pending-approvals', protect, adminOnly, mealController.getPendingApprovals);
+// // Reports
+// router.get('/admin/monthly-report', protect, adminOnly, mealController.getMonthlyMealReport);
+
+// // Payroll Integration
+// router.get('/admin/payroll-export', protect, adminOnly, mealController.exportMealDataForPayroll);
+// router.put('/admin/update-meal-days', protect, adminOnly, mealController.updateMealDaysFromPayroll);
+
+// DAILY MEAL ROUTES (EMPLOYEE)
+router.post("/daily/request", protect, mealController.requestDailyMeal);
+router.get("/daily/my-meals", protect, mealController.getMyDailyMeals);
+router.post("/daily/cancel", protect, mealController.cancelDailyMeal);
+
+// SUBSCRIPTION ROUTES (EMPLOYEE)
+router.post(
+  "/subscription/setup",
+  protect,
+  mealController.setupMonthlySubscription,
+);
+router.post("/subscription/cancel", protect, mealController.cancelSubscription);
+router.put(
+  "/subscription/update-preference",
+  protect,
+  mealController.updateSubscriptionPreference,
+);
+router.put(
+  "/subscription/update-auto-renew",
+  protect,
+  mealController.updateAutoRenew,
+);
+router.get(
+  "/subscription/my-details",
+  protect,
+  mealController.getMySubscription,
+);
+
+// ADMIN/MODERATOR ROUTES
+router.get(
+  "/admin/subscriptions/all",
+  protect,
+  adminOnly,
+  mealController.getAllSubscriptions,
+);
+router.get(
+  "/admin/subscriptions/pending",
+  protect,
+  adminOnly,
+  mealController.getPendingApprovals,
+);
+router.post(
+  "/admin/subscription/create",
+  protect,
+  adminOnly,
+  mealController.adminCreateSubscription,
+);
+router.put(
+  "/admin/subscription/approve",
+  protect,
+  adminOnly,
+  mealController.approveMonthlySubscription,
+);
+router.put(
+  "/admin/subscription/update/:id",
+  protect,
+  adminOnly,
+  mealController.updateSubscription,
+);
+router.delete(
+  "/admin/subscription/:id",
+  protect,
+  adminOnly,
+  mealController.deleteSubscription,
+);
+router.get("/admin/meals/all", protect, adminOnly, mealController.getAllMeals);
+router.post(
+  "/admin/create-meal",
+  protect,
+  adminOnly,
+  mealController.adminCreateMeal,
+);
+router.get(
+  "/admin/monthly-report",
+  protect,
+  adminOnly,
+  mealController.getMonthlyMealReport,
+);
+
+// NEW ROUTES FOR MEAL APPROVAL/REJECTION
+router.put(
+  "/admin/meal/approve",
+  protect,
+  adminOnly,
+  mealController.approveDailyMeal,
+);
+router.put(
+  "/admin/meal/reject",
+  protect,
+  adminOnly,
+  mealController.rejectDailyMeal,
+);
+router.delete(
+  "/admin/meal/:id",
+  protect,
+  adminOnly,
+  mealController.deleteMeal,
+);
+// Backend code (example)
+router.post("/setup", async (req, res) => {
+  try {
+    const { preference, autoRenew, note } = req.body;
+    const userId = req.user._id;
+
+    // Check if user had cancelled subscription before
+    const previousSubscription = await Subscription.findOne({
+      user: userId,
+      status: "cancelled",
+    }).sort({ createdAt: -1 });
+
+    // If previous subscription was cancelled, force pending status
+    let status = "active";
+    let finalAutoRenew = autoRenew;
+
+    if (previousSubscription) {
+      status = "pending"; // Force pending for cancelled users
+      finalAutoRenew = false; // Force auto-renew false
+
+      // Send notification to admin
+      await sendAdminNotification({
+        type: "NEW_SUBSCRIPTION_AFTER_CANCELLATION",
+        userId,
+        message: `User ${req.user.firstName} ${req.user.lastName} requested new subscription after cancellation`,
+      });
+    }
+
+    const subscription = new Subscription({
+      user: userId,
+      preference,
+      autoRenew: finalAutoRenew,
+      status,
+      note: previousSubscription
+        ? `New subscription after cancellation - ${note || ""}`
+        : note,
+      startDate: new Date(),
+    });
+
+    await subscription.save();
+
+    res.json({
+      success: true,
+      message: previousSubscription
+        ? "Subscription requested. Waiting for admin approval."
+        : "Subscription activated successfully.",
+      data: subscription,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+// DASHBOARD & UTILITIES
+router.get("/dashboard/stats", protect, mealController.getDashboardStats);
+router.get("/departments", protect, mealController.getDepartments);
+router.get("/meal/food-cost-per-person", protect, mealController.getMealFoodCostPerPerson);
+// আপনার router ফাইলের শুরুতে বা শেষে যোগ করুন
+router.head("/profile", (req, res) => res.status(200).end());
+router.head("/leave", (req, res) => res.status(200).end());
+router.head("/dashboard", (req, res) => res.status(200).end());
+router.head("/attendance", (req, res) => res.status(200).end());
+router.head("/payroll", (req, res) => res.status(200).end());
+router.head("/officeSchedule", (req, res) => res.status(200).end());
+router.head("/holiday", (req, res) => res.status(200).end());
+router.head("/shift-schedule", (req, res) => res.status(200).end());
+router.head("/audit", (req, res) => res.status(200).end());
+router.head("/user-roles", (req, res) => res.status(200).end());
+router.head("/meal", (req, res) => res.status(200).end());
+
+// =================== Notification Routes ====================
+router.get("/notifications", protect, adminOnly, notificationController.getAll);
+router.get(
+  "/notifications/count",
+  protect,
+  adminOnly,
+  notificationController.getPendingCount,
+);
+router.get("/my-notification", protect, notificationController.getMyStatus);
+router.put(
+  "/notifications/:id/approve",
+  protect,
+  adminOnly,
+  notificationController.approve,
+);
+router.put(
+  "/notifications/:id/reject",
+  protect,
+  adminOnly,
+  notificationController.reject,
+);
+router.put("/notifications/:id/read", protect, notificationController.markRead);
+router.delete(
+  "/notifications/:id",
+  protect,
+  adminOnly,
+  notificationController.dismiss,
+);
+
+module.exports = router;
