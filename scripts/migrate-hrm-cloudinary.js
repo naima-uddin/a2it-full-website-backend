@@ -18,7 +18,7 @@ const { MongoClient } = require("mongodb");
 const cloudinary = require("cloudinary").v2;
 const { ensureSrvResolution } = require("../config/dns");
 
-const TARGET_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+const TARGET_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 const LEGACY_CLOUD = process.env.HRM_LEGACY_CLOUDINARY_CLOUD_NAME;
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -30,7 +30,7 @@ cloudinary.config({
 });
 
 async function main() {
-  if (!TARGET_URI) throw new Error("MONGODB_URI is not set in .env");
+  if (!TARGET_URI) throw new Error("MONGO_URI is not set in .env");
   if (!LEGACY_CLOUD)
     throw new Error("HRM_LEGACY_CLOUDINARY_CLOUD_NAME is not set in .env");
   if (!process.env.CLOUDINARY_CLOUD_NAME)

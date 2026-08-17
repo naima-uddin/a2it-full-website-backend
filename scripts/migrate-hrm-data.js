@@ -2,7 +2,7 @@
  * One-time migration: legacy HRM database  ->  merged a2it-database.
  *
  *   source: HRM_LEGACY_MONGO_URI   (cluster0.as9oeaa... / A2it-HRM)
- *   target: MONGODB_URI            (cluster0.g3sv2kc... / a2it-database)
+ *   target: MONGO_URI            (cluster0.g3sv2kc... / a2it-database)
  *
  * The HRM `users` collection is written to `hrm_users` so it never mixes with
  * the website/CMS accounts that already live in `users`.
@@ -20,7 +20,7 @@ const { MongoClient } = require("mongodb");
 const { ensureSrvResolution } = require("../config/dns");
 
 const SOURCE_URI = process.env.HRM_LEGACY_MONGO_URI;
-const TARGET_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+const TARGET_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 const DRY_RUN = process.argv.includes("--dry-run");
 const BATCH = 500;
 
@@ -46,7 +46,7 @@ const PROTECTED = new Set([
 
 async function main() {
   if (!SOURCE_URI) throw new Error("HRM_LEGACY_MONGO_URI is not set in .env");
-  if (!TARGET_URI) throw new Error("MONGODB_URI is not set in .env");
+  if (!TARGET_URI) throw new Error("MONGO_URI is not set in .env");
 
   await ensureSrvResolution(SOURCE_URI);
   await ensureSrvResolution(TARGET_URI);

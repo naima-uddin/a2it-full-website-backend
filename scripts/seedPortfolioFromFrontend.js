@@ -126,7 +126,7 @@ const normalizeProject = (project, featured) => ({
 const seedPortfolio = async () => {
   try {
     const mongoUri =
-      process.env.MONGODB_URI ||
+      process.env.MONGO_URI ||
       "mongodb+srv://naimaa2it_db_user:LseCFqfqltKY58GW@cluster0.g3sv2kc.mongodb.net/a2it-database?appName=Cluster0";
 
     await mongoose.connect(mongoUri, {

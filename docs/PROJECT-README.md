@@ -134,7 +134,7 @@ migrate করে দেওয়া হয়েছে; নতুন upload স
 
 ## Environment
 
-- `backend/.env` — PORT, MONGODB_URI, JWT_SECRET, SMTP_* (website mail), EMAIL_* (HRM mail),
+- `backend/.env` — PORT, MONGO_URI, JWT_SECRET, SMTP_* (website mail), EMAIL_* (HRM mail),
   CLOUDINARY_*, CALENDARIFIC_API_KEY, আর migration-এর জন্য `HRM_LEGACY_*`।
 - `frontend/.env.local` —
   - `NEXT_PUBLIC_API_URL=http://localhost:5000` → website API

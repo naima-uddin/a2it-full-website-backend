@@ -4,7 +4,7 @@ const { ensureSrvResolution } = require("./dns");
 const connectDB = async () => {
   try {
     const mongoUri =
-      process.env.MONGODB_URI ||
+      process.env.MONGO_URI ||
       "mongodb+srv://naimaa2it_db_user:LseCFqfqltKY58GW@cluster0.g3sv2kc.mongodb.net/a2it-database?appName=Cluster0";
 
     await ensureSrvResolution(mongoUri);
