@@ -37,7 +37,10 @@ const getServices = async (req, res) => {
     const filter = { isActive: true };
     if (category && category !== "all") filter.category = category;
 
-    const services = await Service.find(filter).sort({ createdAt: -1 });
+    const services = await Service.find(filter).sort({
+      order: 1,
+      createdAt: -1,
+    });
 
     return res.status(200).json({
       success: true,
@@ -55,7 +58,7 @@ const getServices = async (req, res) => {
 
 const getAdminServices = async (req, res) => {
   try {
-    const services = await Service.find().sort({ createdAt: -1 });
+    const services = await Service.find().sort({ order: 1, createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -73,7 +76,7 @@ const getAdminServices = async (req, res) => {
 
 const createService = async (req, res) => {
   try {
-    const { title, description, icon, features, category, path, color } =
+    const { title, description, icon, features, category, path, color, image, order } =
       req.body;
 
     if (!title || !description || !icon || !features || !category || !path) {
@@ -91,6 +94,8 @@ const createService = async (req, res) => {
       category,
       path,
       color: color || "bg-[#0066ff]",
+      image: image || "",
+      order: Number.isFinite(Number(order)) ? Number(order) : 0,
     });
 
     await newService.save();
@@ -121,6 +126,8 @@ const updateService = async (req, res) => {
       category,
       path,
       color,
+      image,
+      order,
       isActive,
     } = req.body;
 
@@ -140,6 +147,8 @@ const updateService = async (req, res) => {
     if (category) service.category = category;
     if (path) service.path = path;
     if (color) service.color = color;
+    if (image !== undefined) service.image = image;
+    if (order !== undefined && order !== "") service.order = Number(order);
     if (isActive !== undefined) service.isActive = isActive;
 
     await service.save();

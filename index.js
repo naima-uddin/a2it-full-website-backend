@@ -11,6 +11,7 @@ const authRoutes = require("./routes/auth");
 const usersRoutes = require("./routes/users");
 const servicesRoutes = require("./routes/services");
 const serviceCategoriesRoutes = require("./routes/serviceCategories");
+const servicePageContentRoutes = require("./routes/servicePageContent");
 const portfolioRoutes = require("./routes/portfolio");
 const portfolioCategoriesRoutes = require("./routes/portfolioCategories");
 const promotionalProjectsRoutes = require("./routes/promotionalProjects");
@@ -701,6 +702,9 @@ app.use("/api/services", servicesRoutes);
 
 // Service category routes
 app.use("/api/service-categories", serviceCategoriesRoutes);
+
+// Service page editable content routes
+app.use("/api/service-content", servicePageContentRoutes);
 
 // Portfolio routes
 app.use("/api/portfolio", portfolioRoutes);
