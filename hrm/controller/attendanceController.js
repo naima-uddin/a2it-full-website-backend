@@ -14,6 +14,22 @@ const SessionLog = require("../models/SessionLogModel");
 
 const TIMEZONE = "Asia/Dhaka";
 
+// pdf-parse v2 uses pdfjs-dist internally, which expects the browser APIs
+// DOMMatrix / Path2D / ImageData. These are not global in Node, so parsing a
+// PDF throws "DOMMatrix is not defined". Polyfill them once from @napi-rs/canvas
+// (a dependency of pdf-parse) so server-side PDF text extraction works.
+(() => {
+  if (typeof globalThis.DOMMatrix !== "undefined") return;
+  try {
+    const canvas = require("@napi-rs/canvas");
+    if (canvas.DOMMatrix) globalThis.DOMMatrix = canvas.DOMMatrix;
+    if (canvas.Path2D) globalThis.Path2D = canvas.Path2D;
+    if (canvas.ImageData) globalThis.ImageData = canvas.ImageData;
+  } catch (_e) {
+    // If the polyfill is unavailable, PDF parsing will report a clear error.
+  }
+})();
+
 // ===================== Helper Functions =====================
 // ===================== সার্ভার-সাইড Helper Functions =====================
 
