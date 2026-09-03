@@ -5116,14 +5116,26 @@ exports.previewImportAttendance = async (req, res) => {
       });
     }
 
-    // Index file rows by date (only within the selected month)
+    // Index file rows by date (only within the selected month). Also track which
+    // month(s) the file actually covers, so we can warn on a month mismatch.
     const byDate = {};
+    const fileMonthCounts = {};
     rows.forEach((r) => {
       const m = moment.tz(r.date, "YYYY-MM-DD", TIMEZONE);
-      if (m.isValid() && m.year() === year && m.month() + 1 === month) {
+      if (!m.isValid()) return;
+      const key = m.format("YYYY-MM");
+      fileMonthCounts[key] = (fileMonthCounts[key] || 0) + 1;
+      if (m.year() === year && m.month() + 1 === month) {
         byDate[r.date] = r;
       }
     });
+    // Month(s) present in the file, most-covered first (e.g. ["2026-06"]).
+    const fileMonths = Object.keys(fileMonthCounts).sort(
+      (a, b) => fileMonthCounts[b] - fileMonthCounts[a],
+    );
+    const selectedKey = `${year}-${String(month).padStart(2, "0")}`;
+    const monthMismatch =
+      fileMonths.length > 0 && !fileMonths.includes(selectedKey);
 
     // Existing records for the month
     const startDate = new Date(year, month - 1, 1);
@@ -5169,6 +5181,9 @@ exports.previewImportAttendance = async (req, res) => {
       month,
       year,
       days,
+      // Hints so the UI can warn when the file is for a different month.
+      fileMonths,
+      monthMismatch,
     });
   } catch (error) {
     return res.status(500).json({ status: "fail", message: error.message });
