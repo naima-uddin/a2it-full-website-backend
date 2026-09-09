@@ -2529,7 +2529,16 @@ exports.bulkGeneratePayrolls = async (req, res) => {
           parseInt(year),
           {} // Empty manual inputs
         );
-        
+
+        // Meal deduction — subscribers (or daily-meal employees) must have the
+        // meal cost auto-deducted from their salary. Compute it here and store
+        // it in the fields the pre-save hook reads, otherwise a freshly bulk-
+        // generated subscriber payroll would show only the utility bill.
+        const bulkMeal = await calculateMealDeductionForEmployee(
+          employee._id, parseInt(month), parseInt(year), 0
+        );
+        const bulkMealAmount = bulkMeal.amount || 0;
+
         // Create payroll
         const payroll = new Payroll({
           employee: employee._id,
@@ -2600,7 +2609,8 @@ exports.bulkGeneratePayrolls = async (req, res) => {
             loanDeduction: 0,
             otherDeductions: 0,
             utilityBillDeduction: calculation.rates.utilityBillDeduction,
-            mealDeduction: 0,
+            mealDeduction: bulkMealAmount,
+            foodCostDeduction: bulkMealAmount,
             deductionRules: {
               lateRule: "3 days late = 1 day salary deduction",
               absentRule: "1 day absent = 1 day salary deduction",
@@ -2611,7 +2621,26 @@ exports.bulkGeneratePayrolls = async (req, res) => {
             },
             total: calculation.calculations.deductions.actualTotal
           },
-          
+
+          // Meal source fields the pre-save hook reads to fold the meal into the
+          // total (subscriber / daily-meal auto-deduction).
+          mealDeduction: {
+            totalDeductionAmount: bulkMealAmount,
+            deductionType: bulkMeal.type === 'none' ? 'none' : (bulkMeal.type || 'monthly_subscription')
+          },
+          foodCostDetails: {
+            totalFoodDeduction: bulkMealAmount,
+            fixedDeduction: bulkMealAmount,
+            calculationNote: bulkMeal.calculationNote
+          },
+          mealSystemData: {
+            mealDeduction: {
+              type: bulkMeal.type,
+              amount: bulkMealAmount,
+              calculationNote: bulkMeal.calculationNote
+            }
+          },
+
           summary: {
             grossEarnings: calculation.calculations.basicPay,
             totalDeductions: calculation.calculations.deductions.actualTotal,
