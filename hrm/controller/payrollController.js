@@ -3072,72 +3072,51 @@ const refreshPayrollFromLiveAttendance = async (payroll, userId) => {
   payroll.deductions.halfDayDeduction = calculation.calculations.deductions.halfDay.amount;
   payroll.deductions.utilityBillDeduction = calculation.rates.utilityBillDeduction;
 
-  // ── Recompute meal deduction, onsite service charge, totals and net ──
-  // Previously this function updated the individual deduction lines but left
-  // summary.netPayable / summary.totalDeductions and the stored meal deduction
-  // STALE. That made the stored net disagree with the line items (and made the
-  // frontend re-subtract the meal a second time). Recompute everything here,
-  // exactly like createPayroll, so a regenerated payroll is fully consistent.
-  const utilityBillDeduction = calculation.rates.utilityBillDeduction;
-  const attendanceDeductions = calculation.calculations.deductions.actualTotal; // late+absent+leave+halfday, already capped
-
-  // Meal deduction (monthly subscription takes priority over daily meals) —
-  // same helper the live preview uses, so saved == preview to the taka.
+  // ── Refresh the MEAL source fields + onsite service charge ──
+  // The Payroll pre('save') hook is the single source of truth for the totals
+  // (deductions.total / summary.netPayable) — it recomputes them from
+  // foodCostDetails.totalFoodDeduction (or mealDeduction.totalDeductionAmount)
+  // and onsiteBenefitsDetails.serviceCharge. Previously this refresh never
+  // updated those meal source fields, so a regenerate kept a STALE meal figure
+  // (or 0), which then disagreed with the live food cost the frontend layers on
+  // top and made the meal get subtracted twice. Recompute the current meal from
+  // live data and write it into the fields the hook actually reads, so the
+  // saved net stays consistent with the meal the UI shows.
   const mealDeduction = await calculateMealDeductionForEmployee(
     employeeId,
     month,
     year,
     payroll.manualInputs?.dailyMealRate || 0
   );
+  const mealAmount = mealDeduction.amount || 0;
 
-  // Onsite service charge (only for onsite employees; 0 otherwise).
-  const empDoc = await User.findById(employeeId).select('workLocationType onsiteBenefits');
-  const onsiteServiceCharge =
-    empDoc && empDoc.workLocationType === 'onsite'
-      ? (empDoc.onsiteBenefits?.serviceCharge || 500)
-      : 0;
-
-  const totalEarnings =
-    calculation.calculations.basicPay +
-    (calculation.calculations.overtime?.amount || 0) +
-    (calculation.calculations.bonus || 0) +
-    (calculation.calculations.allowance || 0);
-
-  const totalDeductions =
-    attendanceDeductions +
-    onsiteServiceCharge +
-    (mealDeduction.amount || 0) +
-    utilityBillDeduction;
-
-  const netPayable = Math.max(0, totalEarnings - totalDeductions);
-
-  // Persist the recomputed meal + service charge so the frontend reads the
-  // SAME meal figure that is baked into netPayable (prevents double-counting).
-  payroll.deductions.mealDeduction     = mealDeduction.amount || 0;
-  payroll.deductions.foodCostDeduction = mealDeduction.amount || 0;
-  payroll.deductions.serviceCharge     = onsiteServiceCharge;
-  payroll.deductions.otherDeductions   = onsiteServiceCharge;
-  payroll.deductions.total             = totalDeductions;
-
+  if (!payroll.foodCostDetails) payroll.foodCostDetails = {};
+  payroll.foodCostDetails.totalFoodDeduction = mealAmount;
+  payroll.foodCostDetails.fixedDeduction = mealAmount;
+  payroll.foodCostDetails.calculationNote = mealDeduction.calculationNote;
+  if (!payroll.mealDeduction) payroll.mealDeduction = {};
+  payroll.mealDeduction.totalDeductionAmount = mealAmount;
   payroll.mealSystemData = {
     ...(payroll.mealSystemData || {}),
     mealDeduction: {
       type: mealDeduction.type,
-      amount: mealDeduction.amount || 0,
+      amount: mealAmount,
       calculationNote: mealDeduction.calculationNote
     }
   };
+  payroll.markModified('foodCostDetails');
+  payroll.markModified('mealDeduction');
   payroll.markModified('mealSystemData');
 
-  payroll.summary = {
-    ...(payroll.summary || {}),
-    grossEarnings: totalEarnings,
-    totalDeductions: totalDeductions,
-    netPayable: netPayable,
-    payableDays: calculation.attendance.presentDays
-  };
-  payroll.markModified('summary');
-  payroll.markModified('deductions');
+  // Onsite service charge (only for onsite employees; 0 otherwise) — written to
+  // the field the pre-save hook reads so it is folded into the totals.
+  const empDoc = await User.findById(employeeId).select('workLocationType onsiteBenefits');
+  if (empDoc && empDoc.workLocationType === 'onsite') {
+    if (!payroll.onsiteBenefitsDetails) payroll.onsiteBenefitsDetails = {};
+    payroll.onsiteBenefitsDetails.serviceCharge =
+      empDoc.onsiteBenefits?.serviceCharge || 500;
+    payroll.markModified('onsiteBenefitsDetails');
+  }
 
   payroll.monthInfo = {
     totalHolidays: calculation.attendance.holidays || 0,

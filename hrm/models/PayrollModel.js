@@ -1113,6 +1113,17 @@ payrollSchema.pre("save", function (next) {
   this.deductions.mealDeduction = actualMealDeduction;
   this.deductions.foodCostDeduction = foodCostDeduction;
 
+  // Keep mealSystemData.mealDeduction.amount in sync with the meal figure that
+  // is actually baked into the net below. The frontend reads THIS field first
+  // as its "already-deducted meal" baseline; if it drifts from actualMealDeduction
+  // the live-food-cost layer subtracts the meal a second time (double-counting).
+  if (!this.mealSystemData) this.mealSystemData = {};
+  this.mealSystemData.mealDeduction = {
+    ...(this.mealSystemData.mealDeduction || {}),
+    amount: actualMealDeduction,
+  };
+  this.markModified("mealSystemData");
+
   // Auto-calculate deductions total (INCLUDING MEAL DEDUCTION)
   this.deductions.total =
     (this.deductions.lateDeduction || 0) +
