@@ -1173,7 +1173,7 @@ exports.previewAllPayrolls = async (req, res) => {
     }
 
     const employees = await User.find(query)
-      .select('_id firstName lastName employeeId salary department designation');
+      .select('_id firstName lastName employeeId salary department designation workLocationType onsiteBenefits');
 
     // Which employees already have a saved payroll for this period?
     const existing = await Payroll.find({
@@ -1186,6 +1186,15 @@ exports.previewAllPayrolls = async (req, res) => {
       try {
         const calc = await calculatePayroll(emp._id, emp.salary, month, year, {});
         const mealDeduction = await calculateMealDeductionForEmployee(emp._id, month, year);
+        // Onsite employees carry a fixed "service charge" deduction that the
+        // actual generated payroll (createPayroll) applies. Expose it here so
+        // the preview row's deduction estimate matches what will be saved
+        // (otherwise an onsite employee under-shows in the preview and then
+        // jumps up once generated).
+        const onsiteServiceCharge =
+          emp.workLocationType === 'onsite'
+            ? (emp.onsiteBenefits?.serviceCharge || 500)
+            : 0;
         rows.push({
           _id: `preview-${emp._id}`,
           isPreview: true,
@@ -1213,7 +1222,9 @@ exports.previewAllPayrolls = async (req, res) => {
           mealSystemData: { mealDeduction },
           deductions: {
             mealDeduction: mealDeduction.amount,
-            foodCostDeduction: mealDeduction.amount
+            foodCostDeduction: mealDeduction.amount,
+            serviceCharge: onsiteServiceCharge,
+            otherDeductions: onsiteServiceCharge
           }
         });
       } catch (e) {
@@ -3060,6 +3071,73 @@ const refreshPayrollFromLiveAttendance = async (payroll, userId) => {
   payroll.deductions.leaveDeduction   = calculation.calculations.deductions.leave.amount;
   payroll.deductions.halfDayDeduction = calculation.calculations.deductions.halfDay.amount;
   payroll.deductions.utilityBillDeduction = calculation.rates.utilityBillDeduction;
+
+  // ── Recompute meal deduction, onsite service charge, totals and net ──
+  // Previously this function updated the individual deduction lines but left
+  // summary.netPayable / summary.totalDeductions and the stored meal deduction
+  // STALE. That made the stored net disagree with the line items (and made the
+  // frontend re-subtract the meal a second time). Recompute everything here,
+  // exactly like createPayroll, so a regenerated payroll is fully consistent.
+  const utilityBillDeduction = calculation.rates.utilityBillDeduction;
+  const attendanceDeductions = calculation.calculations.deductions.actualTotal; // late+absent+leave+halfday, already capped
+
+  // Meal deduction (monthly subscription takes priority over daily meals) —
+  // same helper the live preview uses, so saved == preview to the taka.
+  const mealDeduction = await calculateMealDeductionForEmployee(
+    employeeId,
+    month,
+    year,
+    payroll.manualInputs?.dailyMealRate || 0
+  );
+
+  // Onsite service charge (only for onsite employees; 0 otherwise).
+  const empDoc = await User.findById(employeeId).select('workLocationType onsiteBenefits');
+  const onsiteServiceCharge =
+    empDoc && empDoc.workLocationType === 'onsite'
+      ? (empDoc.onsiteBenefits?.serviceCharge || 500)
+      : 0;
+
+  const totalEarnings =
+    calculation.calculations.basicPay +
+    (calculation.calculations.overtime?.amount || 0) +
+    (calculation.calculations.bonus || 0) +
+    (calculation.calculations.allowance || 0);
+
+  const totalDeductions =
+    attendanceDeductions +
+    onsiteServiceCharge +
+    (mealDeduction.amount || 0) +
+    utilityBillDeduction;
+
+  const netPayable = Math.max(0, totalEarnings - totalDeductions);
+
+  // Persist the recomputed meal + service charge so the frontend reads the
+  // SAME meal figure that is baked into netPayable (prevents double-counting).
+  payroll.deductions.mealDeduction     = mealDeduction.amount || 0;
+  payroll.deductions.foodCostDeduction = mealDeduction.amount || 0;
+  payroll.deductions.serviceCharge     = onsiteServiceCharge;
+  payroll.deductions.otherDeductions   = onsiteServiceCharge;
+  payroll.deductions.total             = totalDeductions;
+
+  payroll.mealSystemData = {
+    ...(payroll.mealSystemData || {}),
+    mealDeduction: {
+      type: mealDeduction.type,
+      amount: mealDeduction.amount || 0,
+      calculationNote: mealDeduction.calculationNote
+    }
+  };
+  payroll.markModified('mealSystemData');
+
+  payroll.summary = {
+    ...(payroll.summary || {}),
+    grossEarnings: totalEarnings,
+    totalDeductions: totalDeductions,
+    netPayable: netPayable,
+    payableDays: calculation.attendance.presentDays
+  };
+  payroll.markModified('summary');
+  payroll.markModified('deductions');
 
   payroll.monthInfo = {
     totalHolidays: calculation.attendance.holidays || 0,
