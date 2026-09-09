@@ -4293,6 +4293,23 @@ exports.updatePayroll = async (req, res) => {
       + meal + onsiteService
       + customDedTotal;
 
+    // Mirror the meal figure into the CANONICAL fields the list/slip read
+    // (deductions.mealDeduction / foodCostDeduction and
+    // mealSystemData.mealDeduction.amount). The `meal` value above is already
+    // baked into dedTotal/netPayable — if these fields don't match it, the
+    // frontend treats the meal as "added after save" and subtracts it a second
+    // time (double-counting). Keeping them in sync prevents that.
+    payroll.deductions.mealDeduction = meal;
+    payroll.deductions.foodCostDeduction = meal;
+    payroll.deductions.serviceCharge = onsiteService;
+    if (!payroll.mealSystemData) payroll.mealSystemData = {};
+    payroll.mealSystemData.mealDeduction = {
+      ...(payroll.mealSystemData.mealDeduction || {}),
+      amount: meal
+    };
+    payroll.markModified('mealSystemData');
+    payroll.markModified('deductions');
+
     payroll.deductions.total = dedTotal;
     payroll.summary.grossEarnings = gross;
     payroll.summary.totalDeductions = dedTotal;
