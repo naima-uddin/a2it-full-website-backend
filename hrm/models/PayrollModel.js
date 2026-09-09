@@ -1135,9 +1135,10 @@ payrollSchema.pre("save", function (next) {
     (this.deductions.advanceSalary || 0) +
     (this.deductions.loanDeduction || 0) +
     // (this.deductions.otherDeductions || 0) +
-    (this.salaryDetails?.utilityBillDeduction || 0) + // deducted LAST, after attendance deductions
+    (this.salaryDetails?.utilityBillDeduction || 0) + // utility bill (khala bill) — the ONLY fixed deduction
     actualMealDeduction + // **ADD MEAL DEDUCTION HERE**
-    (this.onsiteBenefitsDetails?.serviceCharge || 0) + // **ADD ONSITE SERVICE CHARGE**
+    // Onsite service charge intentionally NOT deducted — only the utility bill
+    // (khala bill) is the fixed deduction.
     customDedTotal; // custom deductions from the slip editor
 
   // Auto-calculate summary — clamp netPayable to 0 so validator never fails.

@@ -1186,15 +1186,9 @@ exports.previewAllPayrolls = async (req, res) => {
       try {
         const calc = await calculatePayroll(emp._id, emp.salary, month, year, {});
         const mealDeduction = await calculateMealDeductionForEmployee(emp._id, month, year);
-        // Onsite employees carry a fixed "service charge" deduction that the
-        // actual generated payroll (createPayroll) applies. Expose it here so
-        // the preview row's deduction estimate matches what will be saved
-        // (otherwise an onsite employee under-shows in the preview and then
-        // jumps up once generated).
-        const onsiteServiceCharge =
-          emp.workLocationType === 'onsite'
-            ? (emp.onsiteBenefits?.serviceCharge || 500)
-            : 0;
+        // Onsite service charge removed — only the utility bill (khala bill) is
+        // deducted, so the preview exposes no service charge.
+        const onsiteServiceCharge = 0;
         rows.push({
           _id: `preview-${emp._id}`,
           isPreview: true,
@@ -1684,7 +1678,9 @@ else {
       
       const eligibleDays = presentDays + (includeHalfDays ? Math.ceil(halfDays / 2) : 0);
       const teaAllowance = eligibleDays * teaAllowanceRate;
-      const serviceChargeDeduction = serviceCharge;
+      // Onsite service charge removed — only the utility bill (khala bill) is
+      // deducted. Force it to 0 so it never appears in any total or slip.
+      const serviceChargeDeduction = 0;
       const netOnsiteEffect = teaAllowance - serviceChargeDeduction;
       
       onsiteBenefitsDetails = {
@@ -3122,13 +3118,10 @@ const refreshPayrollFromLiveAttendance = async (payroll, userId, opts = {}) => {
   payroll.markModified('mealDeduction');
   payroll.markModified('mealSystemData');
 
-  // Onsite service charge (only for onsite employees; 0 otherwise) — written to
-  // the field the pre-save hook reads so it is folded into the totals.
-  const empDoc = await User.findById(employeeId).select('workLocationType onsiteBenefits');
-  if (empDoc && empDoc.workLocationType === 'onsite') {
-    if (!payroll.onsiteBenefitsDetails) payroll.onsiteBenefitsDetails = {};
-    payroll.onsiteBenefitsDetails.serviceCharge =
-      empDoc.onsiteBenefits?.serviceCharge || 500;
+  // Onsite service charge removed — clear any legacy stored value so a
+  // regenerate/recalculate strips it from the total (only the khala bill stays).
+  if (payroll.onsiteBenefitsDetails) {
+    payroll.onsiteBenefitsDetails.serviceCharge = 0;
     payroll.markModified('onsiteBenefitsDetails');
   }
 
@@ -4272,7 +4265,8 @@ exports.updatePayroll = async (req, res) => {
               || payroll.mealSystemData?.mealDeduction?.amount
               || payroll.foodCostDetails?.totalFoodDeduction || 0;
     const onsiteTea     = payroll.onsiteBenefitsDetails?.teaAllowance || 0;
-    const onsiteService = payroll.onsiteBenefitsDetails?.serviceCharge || 0;
+    // Onsite service charge removed — only the utility bill (khala bill) is deducted.
+    const onsiteService = 0;
 
     const gross = basicPay
       + (e.overtime?.amount || 0)
@@ -4285,8 +4279,8 @@ exports.updatePayroll = async (req, res) => {
       + (payroll.deductions.absentDeduction || 0)
       + (payroll.deductions.leaveDeduction || 0)
       + (payroll.deductions.halfDayDeduction || 0)
-      + (payroll.salaryDetails?.utilityBillDeduction || 0) // deducted LAST
-      + meal + onsiteService
+      + (payroll.salaryDetails?.utilityBillDeduction || 0) // khala bill — the only fixed deduction
+      + meal
       + customDedTotal;
 
     // Mirror the meal figure into the CANONICAL fields the list/slip read
@@ -4297,7 +4291,12 @@ exports.updatePayroll = async (req, res) => {
     // time (double-counting). Keeping them in sync prevents that.
     payroll.deductions.mealDeduction = meal;
     payroll.deductions.foodCostDeduction = meal;
-    payroll.deductions.serviceCharge = onsiteService;
+    payroll.deductions.serviceCharge = 0;
+    payroll.deductions.otherDeductions = 0;
+    if (payroll.onsiteBenefitsDetails) {
+      payroll.onsiteBenefitsDetails.serviceCharge = 0;
+      payroll.markModified('onsiteBenefitsDetails');
+    }
     if (!payroll.mealSystemData) payroll.mealSystemData = {};
     payroll.mealSystemData.mealDeduction = {
       ...(payroll.mealSystemData.mealDeduction || {}),
