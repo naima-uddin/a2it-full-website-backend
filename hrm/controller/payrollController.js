@@ -4134,22 +4134,26 @@ exports.updatePayroll = async (req, res) => {
       }
     }
 
-    // Attendance day counts
+    // Attendance day counts.
+    // A submitted value ALWAYS wins — the edit modal is an explicit manual
+    // override and shows the admin the exact resulting net, so every field it
+    // sends must persist as-is. (Previously a field was only honoured when it
+    // DIFFERED from the stored value; any field left unchanged in the modal was
+    // silently reverted to the live-attendance figure, which is exactly the
+    // "my edit didn't stick" bug.) freshCalc only fills fields NOT provided.
     const ATT_FIELDS = ['totalWorkingDays', 'presentDays', 'absentDays', 'lateDays', 'leaveDays', 'halfDays'];
     ATT_FIELDS.forEach((field) => {
       const incoming = attOverride ? num(attOverride[field], undefined) : undefined;
-      const isExplicitOverride = incoming !== undefined && incoming !== (prevAttendance[field] || 0);
-      if (isExplicitOverride) {
-        payroll.attendance[field] = incoming;
+      if (incoming !== undefined) {
+        payroll.attendance[field] = incoming;      // explicit edit wins
       } else if (freshCalc) {
         payroll.attendance[field] = freshCalc.attendance[field] ?? 0;
-      } else if (incoming !== undefined) {
-        payroll.attendance[field] = incoming;
       }
     });
     payroll.attendance.attendancePercentage = Math.round(
       ((payroll.attendance.presentDays || 0) / (payroll.attendance.totalWorkingDays || 1)) * 100
     );
+    payroll.markModified('attendance');
 
     // Attendance-driven deduction amounts
     const DED_FIELD_TO_CALC_KEY = {
@@ -4160,13 +4164,10 @@ exports.updatePayroll = async (req, res) => {
     };
     Object.entries(DED_FIELD_TO_CALC_KEY).forEach(([field, calcKey]) => {
       const incoming = dedOverride ? num(dedOverride[field], undefined) : undefined;
-      const isExplicitOverride = incoming !== undefined && incoming !== (prevDeductions[field] || 0);
-      if (isExplicitOverride) {
-        payroll.deductions[field] = incoming;
+      if (incoming !== undefined) {
+        payroll.deductions[field] = incoming;      // explicit edit wins
       } else if (freshCalc) {
         payroll.deductions[field] = freshCalc.calculations.deductions[calcKey]?.amount ?? 0;
-      } else if (incoming !== undefined) {
-        payroll.deductions[field] = incoming;
       }
     });
 
