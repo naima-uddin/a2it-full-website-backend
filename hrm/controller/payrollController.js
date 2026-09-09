@@ -3016,13 +3016,27 @@ exports.getPayrollWithManualOvertime = async (req, res) => {
 // explicit "Recalculate" click, since the attendance route itself is always
 // live). A finalized (Approved/Paid/accepted) payroll is a locked snapshot
 // and is left untouched; returns false in that case, true after a real recalc.
-const refreshPayrollFromLiveAttendance = async (payroll, userId) => {
+const refreshPayrollFromLiveAttendance = async (payroll, userId, opts = {}) => {
+  const { force = false } = opts;
   if (
     payroll.status === 'Paid' ||
     payroll.status === 'Approved' ||
     payroll.employeeAccepted?.accepted
   ) {
     return false;
+  }
+
+  // A manually-edited payroll is an intentional override. The automatic
+  // "keep in sync with live attendance" callers (list load, employee view)
+  // must NOT touch it — otherwise every list refresh silently reverts the
+  // admin's edits back to the live-attendance figures. Only an EXPLICIT
+  // Recalculate (force:true) re-syncs it, and that also clears the edited flag.
+  if (payroll.metadata?.isEdited === true && !force) {
+    return false;
+  }
+  if (force && payroll.metadata) {
+    payroll.metadata.isEdited = false;
+    payroll.markModified('metadata');
   }
 
   const employeeId = payroll.employee?._id || payroll.employee;
@@ -3156,7 +3170,9 @@ exports.recalculatePayroll = async (req, res) => {
       });
     }
 
-    const didRecalculate = await refreshPayrollFromLiveAttendance(payroll, req.user._id);
+    // Explicit Recalculate button — force a live re-sync even if the payroll
+    // was manually edited (and clear the edited flag so it tracks live again).
+    const didRecalculate = await refreshPayrollFromLiveAttendance(payroll, req.user._id, { force: true });
 
     if (!didRecalculate) {
       return res.status(200).json({
@@ -4333,14 +4349,18 @@ exports.updatePayroll = async (req, res) => {
       recalculated: recalculate
     });
 
-    // Update metadata
+    // Update metadata. isEdited marks this as an intentional MANUAL override so
+    // the frontend trusts the stored net as-is (no live-meal re-layering) and
+    // the auto-recalc-on-view is skipped. markModified because metadata is a
+    // Mixed/nested path Mongoose may not track on a deep assignment.
     payroll.metadata.lastEdited = new Date();
     payroll.metadata.editedBy = req.user._id;
     payroll.metadata.isEdited = true;
+    payroll.markModified('metadata');
 
     await payroll.save();
 
-    console.log('✅ Payroll updated successfully:', payroll._id);
+    console.log('✅ Payroll updated successfully:', payroll._id, '| netPayable =', payroll.summary.netPayable);
 
     res.status(200).json({
       status: 'success',
