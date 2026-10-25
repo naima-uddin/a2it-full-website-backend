@@ -426,14 +426,20 @@ const calculateWorkingDays = async (employeeId, month, year) => {
     // Load all active overrides overlapping this month
     const overrides = await OfficeScheduleOverride.find({
       isActive: true,
-      startDate: { $lte: endDate },
+      // Include overrides for the entire payroll month, including future
+      // dates where attendance was imported ahead of time.
+      startDate: { $lte: fullMonthEnd },
       endDate: { $gte: startDate }
     }).lean();
 
     // Get effective weekly off days for a specific date (override takes priority)
     const getWeeklyOffDaysForDate = (date) => {
-      const d = new Date(date); d.setHours(12, 0, 0, 0);
-      const ov = overrides.find(o => new Date(o.startDate) <= d && d <= new Date(o.endDate));
+      const dateKey = dhakaDayKey(date);
+      const ov = overrides.find(o => {
+        const startKey = dhakaDayKey(o.startDate);
+        const endKey = dhakaDayKey(o.endDate);
+        return startKey <= dateKey && endKey >= dateKey;
+      });
       return ov ? ov.weeklyOffDays : defaultWeeklyOffDays;
     };
 
@@ -445,7 +451,7 @@ const calculateWorkingDays = async (employeeId, month, year) => {
     const holidayFetchEnd   = new Date(fullMonthEnd); holidayFetchEnd.setDate(holidayFetchEnd.getDate() + 1);
     const holidaysRaw = await Holiday.find({
       date: { $gte: holidayFetchStart, $lte: holidayFetchEnd },
-      isActive: true
+      isActive: { $ne: false }
     });
     const holidays = holidaysRaw.filter(h => dhakaDayKey(h.date).startsWith(monthKey));
     const holidayDates = holidays.map(h => dhakaDayKey(h.date));
@@ -3780,10 +3786,12 @@ const recalculatePayrollTotals = async (payroll,req) => {
 };
 
 // Helper: Update totals without full recalculation
-const updatePayrollTotals = (payroll) => {
+const updatePayrollTotals = (payroll, workDays = null) => {
   try {
     const monthlySalary = payroll.salaryDetails.monthlySalary;
-    const dailyRate = ceilAmount(monthlySalary / (workDays?.totalWorkingDays || 26));
+    const totalWorkingDays =
+      workDays?.totalWorkingDays || payroll.attendance?.totalWorkingDays || 1;
+    const dailyRate = ceilAmount(monthlySalary / totalWorkingDays);
     
     // Update rates
     payroll.salaryDetails.dailyRate = dailyRate;
