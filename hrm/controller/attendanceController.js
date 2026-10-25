@@ -331,7 +331,7 @@ const checkDayStatus = async (employeeId, date) => {
   // Check holiday FIRST
   const holiday = await Holiday.findOne({
     date: { $gte: dayStart, $lte: dayEnd },
-    isActive: true,
+    isActive: { $ne: false },
   });
 
   if (holiday) {
@@ -347,7 +347,7 @@ const checkDayStatus = async (employeeId, date) => {
 
   // Check temporary override
   const override = await OfficeScheduleOverride.findOne({
-    isActive: true,
+    isActive: { $ne: false },
     startDate: { $lte: dayEnd },
     endDate: { $gte: dayStart },
   });
@@ -1620,6 +1620,44 @@ exports.getAllAttendanceRecords = async (req, res) => {
         options: { strictPopulate: false },
       })
       .lean();
+
+    // Holiday master data is authoritative. Correct legacy auto-absent rows
+    // that were created before the holiday or with a different date encoding.
+    const holidayRangeStart = dateFilter.date?.$gte || defaultStartDate;
+    const holidayRangeEnd = dateFilter.date?.$lte || today;
+    const holidays = await Holiday.find({
+      date: { $gte: holidayRangeStart, $lte: holidayRangeEnd },
+      isActive: { $ne: false },
+    }).select("date type").lean();
+    const holidaysByDay = new Map(
+      holidays.map((holiday) => [
+        moment.tz(holiday.date, TIMEZONE).format("YYYY-MM-DD"),
+        holiday,
+      ]),
+    );
+    const legacyAbsentIds = [];
+    records.forEach((record) => {
+      if (record.clockIn || record.status !== "Absent") return;
+      const holiday = holidaysByDay.get(
+        moment.tz(record.date, TIMEZONE).format("YYYY-MM-DD"),
+      );
+      if (!holiday) return;
+      record.status =
+        holiday.type === "GOVT" ? "Govt Holiday" : "Company Holiday";
+      record.markedAbsent = false;
+      legacyAbsentIds.push(record._id);
+    });
+    if (legacyAbsentIds.length) {
+      for (const record of records.filter((item) =>
+        legacyAbsentIds.some((id) => String(id) === String(item._id)),
+      )) {
+        await Attendance.findByIdAndUpdate(record._id, {
+          status: record.status,
+          markedAbsent: false,
+          $unset: { absentMarkedAt: 1 },
+        });
+      }
+    }
 
     console.log(`✅ Returning ${records.length} records`);
 
@@ -4549,7 +4587,7 @@ const applyImportedAttendanceDay = async ({
       $gte: dateM.clone().startOf("day").toDate(),
       $lte: dateM.clone().endOf("day").toDate(),
     },
-    isActive: true,
+    isActive: { $ne: false },
   }).select("type").lean();
 
   // Build absolute clock-in / clock-out instants in Dhaka time

@@ -17,7 +17,7 @@ exports.getDayStatus = async (date) => {
   // 1️⃣ Govt / Company Holiday
   const holiday = await Holiday.findOne({
     date: { $gte: dayStart, $lt: dayEnd },
-    isActive: true
+    isActive: { $ne: false }
   });
 
   if (holiday) {
