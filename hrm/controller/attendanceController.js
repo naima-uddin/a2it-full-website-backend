@@ -1587,8 +1587,18 @@ exports.getAllAttendanceRecords = async (req, res) => {
         ],
       }).select("_id");
 
-      if (employees.length > 0) {
-        matchCondition.employee = { $in: employees.map((e) => e._id) };
+      const searchedEmployeeIds = employees.map((e) => e._id);
+      if (employeeId && employeeId !== "all") {
+        // Keep an explicit employee selection authoritative. Search should
+        // narrow that selection, never replace it with another employee.
+        const selectedEmployeeId = String(employeeId);
+        matchCondition.employee = {
+          $in: searchedEmployeeIds.filter(
+            (id) => String(id) === selectedEmployeeId,
+          ),
+        };
+      } else {
+        matchCondition.employee = { $in: searchedEmployeeIds };
       }
     }
 
