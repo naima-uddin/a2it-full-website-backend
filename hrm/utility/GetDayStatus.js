@@ -1,6 +1,6 @@
 const Holiday = require("../models/HolidayModel");
 const OfficeSchedule = require("../models/OfficeScheduleModel");
-const OfficeScheduleOverride = require("../models/OfficeScheduleOverrideModel");
+const OfficeScheduleOverride = require("../models/TemporaryOfficeSchedule");
 
 exports.getDayStatus = async (date) => {
   const dayName = new Date(date).toLocaleString("en-US", {

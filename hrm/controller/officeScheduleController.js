@@ -58,7 +58,7 @@ exports.getWeeklyOff = async (req, res) => {
  */
 exports.updateWeeklyOff = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "admin" && req.user.role !== "superAdmin") {
       return res.status(403).json({ 
         status: "fail", 
         message: "Access denied. Only admin allowed" 
@@ -135,7 +135,7 @@ exports.updateWeeklyOff = async (req, res) => {
  */
 exports.createOrUpdateOverride = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "admin" && req.user.role !== "superAdmin") {
       return res.status(403).json({ 
         status: "fail", 
         message: "Access denied. Only admin allowed" 
@@ -145,10 +145,14 @@ exports.createOrUpdateOverride = async (req, res) => {
     const { startDate, endDate, weeklyOffDays } = req.body;
 
     // Validate required fields
-    if (!startDate || !endDate || !weeklyOffDays || !weeklyOffDays.length) {
+    if (
+      !startDate ||
+      !endDate ||
+      !Array.isArray(weeklyOffDays)
+    ) {
       return res.status(400).json({ 
         status: "fail", 
-        message: "startDate, endDate and weeklyOffDays are required" 
+        message: "startDate, endDate and weeklyOffDays array are required" 
       });
     }
 
@@ -240,7 +244,7 @@ exports.createOrUpdateOverride = async (req, res) => {
  */
 exports.getOverrideHistory = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "admin" && req.user.role !== "superAdmin") {
       return res.status(403).json({ 
         status: "fail", 
         message: "Access denied. Only admin allowed" 
@@ -272,7 +276,7 @@ exports.getOverrideHistory = async (req, res) => {
  */
 exports.deleteOverride = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "admin" && req.user.role !== "superAdmin") {
       return res.status(403).json({ 
         status: "fail", 
         message: "Access denied. Only admin allowed" 
