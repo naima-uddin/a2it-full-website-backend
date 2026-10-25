@@ -320,16 +320,17 @@ const checkDayStatus = async (employeeId, date) => {
   // otherwise "today" can resolve to the wrong calendar day (see comment
   // above checkLeaveStatus).
   const dhakaMoment = moment.tz(date, TIMEZONE);
-  const today = new Date(dhakaMoment.format("YYYY-MM-DD"));
+  const dayStart = dhakaMoment.clone().startOf("day").toDate();
+  const dayEnd = dhakaMoment.clone().endOf("day").toDate();
   const dayName = dhakaMoment.format("dddd");
 
   console.log(
-    `🔍 Checking day status for ${dayName}, ${today.toISOString().split("T")[0]}`,
+    `🔍 Checking day status for ${dayName}, ${dhakaMoment.format("YYYY-MM-DD")}`,
   );
 
   // Check holiday FIRST
   const holiday = await Holiday.findOne({
-    date: today,
+    date: { $gte: dayStart, $lte: dayEnd },
     isActive: true,
   });
 
@@ -347,8 +348,8 @@ const checkDayStatus = async (employeeId, date) => {
   // Check temporary override
   const override = await OfficeScheduleOverride.findOne({
     isActive: true,
-    startDate: { $lte: today },
-    endDate: { $gte: today },
+    startDate: { $lte: dayEnd },
+    endDate: { $gte: dayStart },
   });
 
   let weeklyOffDays = [];
@@ -4543,6 +4544,13 @@ const applyImportedAttendanceDay = async ({
   // Day marker stored as local midnight (matches existing bulk logic)
   const recordDate = new Date(dateM.year(), dateM.month(), dateM.date());
   const timeFmts = ["YYYY-MM-DD HH:mm:ss", "YYYY-MM-DD HH:mm"];
+  const holiday = await Holiday.findOne({
+    date: {
+      $gte: dateM.clone().startOf("day").toDate(),
+      $lte: dateM.clone().endOf("day").toDate(),
+    },
+    isActive: true,
+  }).select("type").lean();
 
   // Build absolute clock-in / clock-out instants in Dhaka time
   let clockInDate = inStr
@@ -4589,6 +4597,12 @@ const applyImportedAttendanceDay = async ({
     status = "Absent";
   }
 
+  // A no-clock-in import row must not turn an office holiday into Absent.
+  // Keep an actual worked day as Present/Late even if it falls on a holiday.
+  if (holiday && !clockInDate && (!sheetStatus || sheetStatus === "Absent")) {
+    status = holiday.type === "GOVT" ? "Govt Holiday" : "Company Holiday";
+  }
+
   let totalHours = 0;
   if (clockInDate && clockOutDate) {
     totalHours = parseFloat(
@@ -4615,6 +4629,18 @@ const applyImportedAttendanceDay = async ({
   // Gap-fill mode (default): any day that already has a record is left exactly
   // as-is. Only days with no record at all are filled from the file.
   if (existing && preserveExisting) {
+    if (holiday && existing.status === "Absent" && !existing.clockIn) {
+      existing.status = holiday.type === "GOVT" ? "Govt Holiday" : "Company Holiday";
+      existing.markedAbsent = false;
+      existing.absentMarkedAt = null;
+      existing.correctedByAdmin = true;
+      existing.correctedBy = adminId;
+      existing.correctionDate = new Date();
+      existing.correctionReason = sourceLabel;
+      existing.remarks = `Holiday corrected (${sourceLabel}) for ${dateStr}`;
+      await existing.save();
+      return "updated";
+    }
     return "skipped";
   }
 

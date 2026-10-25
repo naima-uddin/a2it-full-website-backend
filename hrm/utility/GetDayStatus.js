@@ -3,13 +3,20 @@ const OfficeSchedule = require("../models/OfficeScheduleModel");
 const OfficeScheduleOverride = require("../models/TemporaryOfficeSchedule");
 
 exports.getDayStatus = async (date) => {
-  const dayName = new Date(date).toLocaleString("en-US", {
+  const dayMoment = new Date(date);
+  const dayName = dayMoment.toLocaleString("en-US", {
     weekday: "long",
+    timeZone: "Asia/Dhaka",
   });
+  const dayStart = new Date(
+    `${dayMoment.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" })}T00:00:00+06:00`,
+  );
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(dayEnd.getHours() + 24);
 
   // 1️⃣ Govt / Company Holiday
   const holiday = await Holiday.findOne({
-    date: new Date(date),
+    date: { $gte: dayStart, $lt: dayEnd },
     isActive: true
   });
 
@@ -20,8 +27,8 @@ exports.getDayStatus = async (date) => {
   // 2️⃣ Temporary Weekly Override
   const override = await OfficeScheduleOverride.findOne({
     isActive: true,
-    startDate: { $lte: date },
-    endDate: { $gte: date }
+    startDate: { $lt: dayEnd },
+    endDate: { $gte: dayStart }
   });
 
   if (override && override.weeklyOffDays.includes(dayName)) {
